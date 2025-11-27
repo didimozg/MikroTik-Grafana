@@ -279,3 +279,26 @@ To prevent firewall logs from spamming the WinBox log window:
 ```
 <img width="642" height="419" alt="изображение" src="https://github.com/user-attachments/assets/f76354d1-6929-4bbd-9eb9-585a09be63a2" />
 
+P.S.
+
+### Why did we use Rsyslog?
+
+We were forced to place Rsyslog as a middleware between the router and Promtail for three technical reasons:
+
+**1. Non-compliant Syslog implementation in RouterOS v7**
+In the latest RouterOS versions (v7), MikroTik changed how logging works.
+* The `remote-log-format=syslog` setting (intended to follow **RFC 5424**) is implemented with a slight deviation: it often misses the "protocol version" digit in the header.
+* **Promtail** is a strictly compliant parser. When it received packets from MikroTik missing the version number, it rejected them with the error: *`expecting a version value`*.
+* **Rsyslog**, on the other hand, is a mature and robust tool designed to be lenient. It accepts almost any data over UDP, ignoring header violations, and simply saves the payload as text.
+
+**2. Framing Errors**
+When we attempted to switch MikroTik to `default` mode (raw text without headers), Promtail failed with *`invalid or unsupported framing`*.
+Promtail requires clear delimiters (like newlines `\n` or octet counting) to distinguish messages in a stream. UDP packets arrive without these explicit boundaries in a way Promtail expects. Rsyslog handles raw UDP streams perfectly, appending newlines and writing them to a file, which is exactly what Promtail needs.
+
+**3. The "Infinite Logging Loop" Problem**
+This was the critical issue we faced at the end.
+* Loki (the database) writes its own internal operational logs to the server's system log (`/var/log/syslog`).
+* If we configured Promtail to read the general system log, it would read Loki's logs and send them back to Loki.
+* Loki would ingest them and write a new log entry saying "I received data".
+* This creates an infinite feedback loop (log storm) that would crash the server or fill the disk.
+* **Rsyslog** allowed us to apply a filter: *"If data comes from IP 192.168.X.X (MikroTik), write it to a dedicated file `mikrotik.log`"*. This physically separated the MikroTik logs from the system noise.
