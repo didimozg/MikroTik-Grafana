@@ -91,9 +91,9 @@ Promtail будет читать файл `/var/log/mikrotik.log`, опреде�
 
 Вам нужен файл `GeoLite2-City.mmdb`.
 
-  * Скачайте его с сайта MaxMind (нужна регистрация).
-  * Положите файл в папку `/etc/promtail/GeoLite2-City.mmdb`.
-
+```bash
+wget https://github.com/P3TERX/GeoLite.mmdb/releases/download/2025.11.25/GeoLite2-City.mmdb
+```
 ### 2\. Конфигурация Promtail
 
 Создайте/отредактируйте `/etc/promtail/config.yaml`:
