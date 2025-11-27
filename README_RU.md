@@ -278,5 +278,4 @@ systemctl restart promtail
   }
 }
 ```
-
-### ✅ Готово\!
+<img width="803" height="402" alt="изображение" src="https://github.com/user-attachments/assets/8cb5af2b-4675-4c8d-ad4b-f8fe410add63" />
