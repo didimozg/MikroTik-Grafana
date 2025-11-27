@@ -244,6 +244,5 @@ echo "   /system logging add topics=error action=lokisyslog"
 echo "   /system logging add topics=firewall action=lokisyslog"
 echo ""
 echo "3. Enable Logging on Firewall Drop Rule (Crucial for Attack Map):"
-echo "   /ip firewall filter set [find action=drop chain=input] log=yes log-prefix=\"FW_DROP\""
+echo "   /ip firewall filter set [find action=drop chain=input] log=yes
 echo "-----------------------------------------------------------"
-echo "Grafana Data Source URL: http://$MY_IP:3100"
