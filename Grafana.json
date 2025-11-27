@@ -1,0 +1,59 @@
+{
+  "type": "geomap",
+  "title": "Attack Map (By Country)",
+  "datasource": { "type": "loki", "uid": "ff5cy9c2r02kgb" },
+  "targets": [
+    {
+      "refId": "A",
+      "expr": "topk(200, sum by (geoip_country_name) (count_over_time({job=\"mikrotik_via_rsyslog\"} | unpack | geoip_country_name != \"\" [$__range])))",
+      "queryType": "instant",
+      "format": "table"
+    }
+  ],
+  "transformations": [
+    { "id": "labelsToFields", "options": { "mode": "columns" } },
+    { "id": "merge", "options": {} },
+    { "id": "convertFieldType", "options": { "fields": {}, "conversions": [ { "targetField": "Value", "destinationType": "number" } ] } },
+    { "id": "organize", "options": { "renameByName": { "Value": "Attack Count", "geoip_country_name": "Country", "Value #A": "Attack Count" } } }
+  ],
+  "fieldConfig": {
+    "defaults": {
+      "color": { "mode": "thresholds" },
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          { "color": "green", "value": null },
+          { "color": "#00aeff", "value": 50 },
+          { "color": "#EAB839", "value": 200 },
+          { "color": "orange", "value": 500 },
+          { "color": "red", "value": 1000 },
+          { "color": "purple", "value": 5000 }
+        ]
+      }
+    },
+    "overrides": [
+      { "matcher": { "id": "byName", "options": "Time" }, "properties": [ { "id": "custom.hideFrom", "value": { "legend": true, "tooltip": true, "viz": true } } ] },
+      { "matcher": { "id": "byName", "options": "Attack Count" }, "properties": [ { "id": "color", "value": { "mode": "thresholds" } } ] }
+    ]
+  },
+  "options": {
+    "view": { "id": "coords", "lat": 55, "lon": 60, "zoom": 2, "allLayers": true },
+    "layers": [
+      {
+        "type": "markers",
+        "name": "Attacks",
+        "config": {
+          "style": {
+            "size": { "fixed": 5, "min": 8, "max": 40, "field": "Attack Count" },
+            "color": { "field": "Attack Count" },
+            "opacity": 0.6,
+            "symbol": { "mode": "fixed", "fixed": "img/icons/marker/circle.svg" }
+          },
+          "showLegend": true
+        },
+        "location": { "mode": "lookup", "lookup": "Country" },
+        "tooltip": true
+      }
+    ]
+  }
+}
