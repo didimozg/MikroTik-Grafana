@@ -1,48 +1,49 @@
 #!/bin/bash
 
-# Остановка при любой ошибке
+# Остановка скрипта при любой ошибке
 set -e
 
-# Цвета для красоты
+# Цвета для красивого вывода
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+NC='\033[0m' # No Color (сброс цвета)
 
-echo -e "${GREEN}=== Установка SIEM (Rsyslog + Loki v3 + Promtail v3) ===${NC}"
-echo "Конфигурация: MikroTik -> Rsyslog (File) -> Promtail -> Loki"
+echo -e "${GREEN}=== Установка системы мониторинга SIEM (Rsyslog + Loki v3 + Promtail v3) ===${NC}"
+echo "Конфигурация: MikroTik -> Rsyslog (Файл) -> Promtail -> Loki"
 echo "Версии ПО: Loki v3.3.2, Promtail v3.3.2"
+echo "Локализация: RU"
 echo ""
 
 # --- 1. Ввод данных ---
-read -p "Введите IP адрес вашего MikroTik: " MIKROTIK_IP
+read -p "Введите IP адрес вашего MikroTik (откуда придут логи): " MIKROTIK_IP
 
 if [ -z "$MIKROTIK_IP" ]; then
-    echo -e "${RED}Ошибка: IP адрес не введен.${NC}"
+    echo -e "${RED}Ошибка: Вы не ввели IP адрес. Перезапустите скрипт.${NC}"
     exit 1
 fi
 
-# Используем последние стабильные бинарники v3
+# Используем стабильные версии
 LOKI_VER="3.3.2"
 PROMTAIL_VER="3.3.2"
 
 # --- 2. Подготовка системы ---
-echo -e "${BLUE}[1/7] Обновление пакетов...${NC}"
+echo -e "${BLUE}[1/7] Обновление пакетов Debian...${NC}"
 apt-get update -qq
 apt-get install -y -qq rsyslog wget unzip curl
 
 # --- 3. Настройка Rsyslog (Буфер) ---
 echo -e "${BLUE}[2/7] Настройка Rsyslog...${NC}"
 
-# Включаем UDP 1514
+# Включаем прием UDP на порту 1514 в главном конфиге
 sed -i '/module(load="imudp")/s/^#//g' /etc/rsyslog.conf
 sed -i '/input(type="imudp" port="514")/s/^#//g' /etc/rsyslog.conf
-# Меняем порт на 1514
+# Меняем порт с 514 на 1514
 sed -i 's/port="514"/port="1514"/g' /etc/rsyslog.conf
-# Отключаем imklog (чтобы не спамил ошибками в LXC)
+# Отключаем модуль imklog (чтобы не было ошибок прав доступа в LXC контейнере)
 sed -i '/module(load="imklog")/s/^/#/g' /etc/rsyslog.conf
 
-# Создаем конфиг фильтрации (пишем логи микротика в отдельный файл)
+# Создаем правило фильтрации: логи с IP микротика писать в отдельный файл
 cat > /etc/rsyslog.d/mikrotik.conf <<EOF
 if \$fromhost-ip == '$MIKROTIK_IP' then {
     action(type="omfile" file="/var/log/mikrotik.log")
@@ -50,11 +51,11 @@ if \$fromhost-ip == '$MIKROTIK_IP' then {
 }
 EOF
 
-# Создаем файл лога с правильными правами
+# Создаем сам файл лога и даем права на чтение
 touch /var/log/mikrotik.log
 chmod 644 /var/log/mikrotik.log
 
-# Настройка ротации (чтобы диск не забился)
+# Настраиваем ротацию логов (чтобы диск не переполнился через месяц)
 cat > /etc/logrotate.d/mikrotik <<EOF
 /var/log/mikrotik.log {
     daily
@@ -70,23 +71,24 @@ cat > /etc/logrotate.d/mikrotik <<EOF
 }
 EOF
 
+# Перезапускаем Rsyslog для применения настроек
 systemctl restart rsyslog
 
-# --- 4. Установка Loki v3 ---
-echo -e "${BLUE}[3/7] Установка Loki v$LOKI_VER...${NC}"
+# --- 4. Установка Loki ---
+echo -e "${BLUE}[3/7] Скачивание и установка Loki v$LOKI_VER...${NC}"
 cd /tmp
 wget -q "https://github.com/grafana/loki/releases/download/v${LOKI_VER}/loki-linux-amd64.zip"
 unzip -q -o loki-linux-amd64.zip
 mv loki-linux-amd64 /usr/local/bin/loki
 chmod +x /usr/local/bin/loki
 
-# Пользователь и папки
+# Создаем пользователя loki и папки для данных
 if ! id "loki" &>/dev/null; then useradd --no-create-home --shell /bin/false loki; fi
 mkdir -p /var/lib/loki
 chown -R loki:loki /var/lib/loki
 mkdir -p /etc/loki
 
-# Конфиг Loki (Адаптирован под v3: tsdb + schema v13)
+# Создаем конфиг Loki (Оптимизирован для v3: движок tsdb, схема v13)
 cat > /etc/loki/config.yaml <<EOF
 auth_enabled: false
 
@@ -124,7 +126,7 @@ analytics:
   reporting_enabled: false
 EOF
 
-# Systemd unit для Loki
+# Создаем службу Systemd для Loki
 cat > /etc/systemd/system/loki.service <<EOF
 [Unit]
 Description=Loki service
@@ -141,11 +143,17 @@ WantedBy=multi-user.target
 EOF
 
 # --- 5. База GeoIP ---
-echo -e "${BLUE}[4/7] Скачивание GeoIP (P3TERX)...${NC}"
+echo -e "${BLUE}[4/7] Скачивание базы GeoIP (Источник: P3TERX/GitHub)...${NC}"
 mkdir -p /etc/promtail
+# Скачиваем последнюю версию базы без регистрации
 wget -q -O /etc/promtail/GeoLite2-City.mmdb "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
 
-# --- 6. Установка Promtail v3 ---
+if [ ! -f "/etc/promtail/GeoLite2-City.mmdb" ]; then
+    echo -e "${RED}Ошибка: Не удалось скачать базу GeoIP. Проверьте интернет.${NC}"
+    exit 1
+fi
+
+# --- 6. Установка Promtail ---
 echo -e "${BLUE}[5/7] Установка Promtail v$PROMTAIL_VER...${NC}"
 cd /tmp
 wget -q "https://github.com/grafana/loki/releases/download/v${PROMTAIL_VER}/promtail-linux-amd64.zip"
@@ -155,7 +163,7 @@ chmod +x /usr/local/bin/promtail
 
 mkdir -p /var/lib/promtail
 
-# Конфиг Promtail (Читаем файл от Rsyslog + GeoIP)
+# Конфиг Promtail (Читает файл от Rsyslog + применяет GeoIP)
 cat > /etc/promtail/config.yaml <<EOF
 server:
   http_listen_port: 9080
@@ -181,17 +189,17 @@ scrape_configs:
       - regex:
           expression: ',\s(?P<source_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):\d+->'
 
-      # Регулярка для формата src-address=
+      # Регулярка для стандартного формата src-address=
       - regex:
           expression: 'src-address=(?P<source_ip>\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
 
-      # GeoIP lookup
+      # GeoIP поиск (определение страны/города по IP)
       - geoip:
           db: "/etc/promtail/GeoLite2-City.mmdb"
           source: "source_ip"
           db_type: "city"
 
-      # Упаковка данных
+      # Упаковка данных для отправки в Grafana
       - pack:
           labels:
             - source_ip
@@ -201,7 +209,7 @@ scrape_configs:
             - geoip_location_longitude
 EOF
 
-# Systemd unit для Promtail
+# Создаем службу Systemd для Promtail
 cat > /etc/systemd/system/promtail.service <<EOF
 [Unit]
 Description=Promtail service
@@ -217,30 +225,35 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-# --- 7. Финал ---
+# --- 7. Завершение ---
 echo -e "${BLUE}[6/7] Запуск сервисов...${NC}"
 systemctl daemon-reload
 systemctl enable loki promtail
 systemctl restart loki promtail
 
-# Чистка мусора
+# Чистка временных файлов
 rm -f /tmp/loki-linux-amd64.zip /tmp/promtail-linux-amd64.zip /tmp/loki-linux-amd64 /tmp/promtail-linux-amd64
 
+# Определение IP сервера
 MY_IP=$(hostname -I | awk '{print $1}')
 
-echo -e "${GREEN}=== ГОТОВО! СИСТЕМА УСТАНОВЛЕНА ===${NC}"
+echo -e "${GREEN}=== ГОТОВО! СИСТЕМА УСПЕШНО УСТАНОВЛЕНА ===${NC}"
 echo "-----------------------------------------------------------"
-echo "Настройте MikroTik (Terminal):"
-echo "1. Создайте Action:"
-echo "   /system logging action add name=lokisyslog target=remote remote=$MY_IP remote-port=1514 src-address=0.0.0.0 remote-log-format=bsd-syslog syslog-time-format=bsd-syslog syslog-facility=local0"
-echo "   (Или remote-log-format=default, если v7 ругается)"
+echo "Выполните следующие настройки на вашем MikroTik (Terminal):"
 echo ""
-echo "2. Включите логирование:"
+echo "1. Создайте правило отправки логов (Action):"
+echo "   /system logging action add name=lokisyslog target=remote remote=$MY_IP remote-port=1514 src-address=0.0.0.0 remote-log-format=bsd-syslog syslog-time-format=bsd-syslog syslog-facility=local0"
+echo "   (Если RouterOS v7 выдает ошибку формата, используйте: remote-log-format=default)"
+echo ""
+echo "2. Включите отправку нужных тем:"
 echo "   /system logging add topics=info action=lokisyslog"
 echo "   /system logging add topics=error action=lokisyslog"
 echo "   /system logging add topics=firewall action=lokisyslog"
 echo ""
-echo "3. Включите лог в правиле Firewall Drop:"
+echo "3. Включите логирование в Firewall (для карты атак):"
 echo "   /ip firewall filter set [find action=drop chain=input] log=yes log-prefix=\"FW_DROP\""
+echo ""
+echo "4. (Опционально) Чтобы логи фаервола не засоряли память роутера:"
+echo "   /system logging set [find target=memory topics~\"info\"] topics=info,!firewall"
 echo "-----------------------------------------------------------"
-echo "Grafana Data Source URL: http://$MY_IP:3100"
+echo "Адрес для Grafana (Data Source URL): http://$MY_IP:3100"
