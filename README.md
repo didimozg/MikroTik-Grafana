@@ -277,3 +277,5 @@ To prevent firewall logs from spamming the WinBox log window:
   }
 }
 ```
+<img width="642" height="419" alt="изображение" src="https://github.com/user-attachments/assets/f76354d1-6929-4bbd-9eb9-585a09be63a2" />
+
