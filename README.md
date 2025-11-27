@@ -1,6 +1,6 @@
 # 🛡️ Guide: Cyber Attack Map with MikroTik & Grafana
 
-**Stack:** MikroTik → Rsyslog (LXC) → Promtail → Loki → Grafana.
+**Stack:** MikroTik → Rsyslog (LXC) → Promtail(LXC) → Loki (LXC)  → Grafana.
 
 -----
 
