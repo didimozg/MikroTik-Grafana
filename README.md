@@ -90,9 +90,9 @@ Promtail will read the `/var/log/mikrotik.log` file, resolve IPs to locations, a
 
 You need the `GeoLite2-City.mmdb` file.
 
-  * Download it from MaxMind (requires free account).
-  * Place the file at: `/etc/promtail/GeoLite2-City.mmdb`.
-
+```bash
+wget https://github.com/P3TERX/GeoLite.mmdb/releases/download/2025.11.25/GeoLite2-City.mmdb
+```
 ### 2\. Configure Promtail
 
 Edit the config file:
